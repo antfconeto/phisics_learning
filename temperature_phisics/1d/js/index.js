@@ -47,8 +47,23 @@ function update() {
         );
     }
 
+    // bordas isoladas (Neumann, ∂T/∂x = 0): a borda copia o vizinho,
+    // então não há fluxo para fora e a energia se conserva
+    next[0] = next[1];
+    next[next.length - 1] = next[next.length - 2];
+
     pipe.temperature = next;
     pipe.step++;
+}
+
+// soma das células internas (as bordas são só cópias): proporcional à energia
+function totalEnergy() {
+    const T = pipe.temperature;
+    let sum = 0;
+    for (let i = 1; i < T.length - 1; i++) {
+        sum += T[i];
+    }
+    return sum;
 }
 
 function temperatureColor(t) {
@@ -61,7 +76,7 @@ function pipeLeft() {
 }
 
 function pipeTop() {
-    return 300;
+    return 135;
 }
 
 function cellCenterX(i) {
@@ -71,35 +86,36 @@ function cellCenterX(i) {
 function drawFormulas() {
     const r = pipe.alpha * pipe.dt / (pipe.dx ** 2);
 
+    const left = pipeLeft();
+    const right = screen.width - left;
+
     ctx.fillStyle = "black";
-    ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
 
-    ctx.font = "bold 16px sans-serif";
-    ctx.fillText("Equação do calor (1D)", 20, 30);
+    ctx.textAlign = "left";
+    ctx.font = "bold 14px sans-serif";
+    ctx.fillText("Condução de calor 1D", left, 28);
 
-    ctx.font = "italic 18px serif";
-    ctx.fillText("∂T/∂t = α · ∂²T/∂x²", 40, 60);
+    ctx.textAlign = "right";
+    ctx.font = "12px sans-serif";
+    ctx.fillStyle = "#666";
+    ctx.fillText("bordas isoladas", right, 28);
 
-    ctx.font = "bold 16px sans-serif";
-    ctx.fillText("Diferenças finitas (explícito)", 20, 95);
+    ctx.fillStyle = "black";
+    ctx.font = "italic 15px serif";
+    ctx.textAlign = "left";
+    ctx.fillText("∂T/∂t = α · ∂²T/∂x²", left, 52);
+    ctx.textAlign = "right";
+    ctx.fillText("q = −k · ∂T/∂x", right, 52);
 
-    ctx.font = "italic 18px serif";
-    ctx.fillText("Tᵢⁿ⁺¹ = Tᵢⁿ + r · (Tᵢ₊₁ⁿ − 2Tᵢⁿ + Tᵢ₋₁ⁿ)", 40, 125);
-    ctx.fillText("r = α · Δt / Δx²", 40, 152);
+    ctx.textAlign = "left";
+    ctx.fillText("Tᵢⁿ⁺¹ = Tᵢⁿ + r · (Tᵢ₊₁ⁿ − 2Tᵢⁿ + Tᵢ₋₁ⁿ)", left, 74);
 
-    ctx.font = "bold 16px sans-serif";
-    ctx.fillText("Fluxo de calor (Lei de Fourier)", 20, 187);
-
-    ctx.font = "italic 18px serif";
-    ctx.fillText("q = −k · ∂T/∂x", 40, 215);
-
-    ctx.font = "13px monospace";
-    ctx.fillStyle = "#444";
-    ctx.fillText(
-        `α = ${pipe.alpha}   Δt = ${pipe.dt}   Δx = ${pipe.dx}   r = ${r.toFixed(2)}   n = ${pipe.step}`,
-        20, 245
-    );
+    ctx.font = "11px monospace";
+    ctx.fillStyle = "#666";
+    ctx.fillText(`r = α·Δt/Δx² = ${r.toFixed(2)}`, left, 96);
+    ctx.textAlign = "right";
+    ctx.fillText(`n = ${pipe.step}   ΣT = ${totalEnergy().toFixed(0)}`, right, 96);
 }
 
 function drawPipe() {
@@ -183,14 +199,14 @@ function drawTemperatureArrows() {
 
         ctx.fillStyle = "#444";
         ctx.textBaseline = "top";
-        ctx.fillText(flux.toFixed(1), x, y + 10);
+        ctx.fillText((Math.abs(flux) < 0.05 ? 0 : flux).toFixed(1), x, y + 10);
     }
 
-    ctx.textAlign = "left";
+    ctx.textAlign = "center";
     ctx.textBaseline = "top";
-    ctx.font = "12px sans-serif";
-    ctx.fillStyle = "#444";
-    ctx.fillText("setas: direção e intensidade do fluxo de calor q = −dT/dx", 20, bottom + 50);
+    ctx.font = "11px sans-serif";
+    ctx.fillStyle = "#666";
+    ctx.fillText("setas: fluxo de calor q = −dT/dx", screen.width / 2, bottom + 48);
 }
 
 function drawVerticalMarker(x, y1, y2) {
@@ -213,8 +229,8 @@ function drawVerticalMarker(x, y1, y2) {
 
 function drawProfile() {
     const T = pipe.temperature;
-    const top = 440;
-    const height = 130;
+    const top = pipeTop() + pipe.height + 90;
+    const height = 170;
     const left = pipeLeft();
     const width = T.length * pipe.cellWidth;
 
