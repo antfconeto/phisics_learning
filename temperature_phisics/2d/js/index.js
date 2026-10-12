@@ -36,7 +36,7 @@ const mouse = {
 function defineInitialTemperature() {
     const centerX = sheet.width / 2;
     const centerY = sheet.height / 2;
-    const radius = 20;
+    const radius = 10;
 
     sheet.temperature = Array.from(
         { length: sheet.height + 1 },
