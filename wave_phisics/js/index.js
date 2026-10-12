@@ -6,11 +6,16 @@ const screen = {
     height: cnv.height,
 };
 
+let mousePosition = {
+    x:0,
+    y:0
+}
+
 const mesh = {
-    width: 80,
-    height: 80,
-    cellWidth: 5,
-    cellHeight: 5,
+    width: 200,
+    height: 200,
+    cellWidth: 3,
+    cellHeight: 3,
     displacement: [],
     displacementOld: [],
     displacementNew: [],
@@ -26,7 +31,7 @@ const mesh = {
 function defineStartDisplacement() {
     const centerX = mesh.width / 2;
     const centerY = mesh.height / 2;
-    const radius = 10;
+    const radius = 1;
 
     mesh.displacement = Array.from({ length: mesh.height + 1 }, (_, y) =>
         Array.from({ length: mesh.width + 1 }, (_, x) => {
@@ -39,13 +44,14 @@ function defineStartDisplacement() {
     mesh.step = 0;
 }
 
-// Render the mesh with colors based on displacement
-
 function displacementColor(d) {
-    const hue = (1 - d / mesh.maxDisplacement) * 240;
-    return `hsl(${hue}, 100%, 50%)`;
+    // Mapeia o deslocamento para uma faixa de luminosidade (ex: de 10% a 90%)
+    // 'ratio' normaliza o deslocamento entre 0 e 1
+    const ratio = Math.min(Math.max(d / mesh.maxDisplacement, 0), 1);
+    const lightness = 10 + ratio * 80; // Vai de 10% (escuro) a 90% (claro)
+    
+    return `hsl(240, 100%, ${lightness}%)`;
 }
-
 function meshLeft() {
     return Math.round(
         screen.width / 2 - (mesh.displacement[0].length * mesh.cellWidth) / 2,
@@ -99,16 +105,20 @@ function calculateInitialWave() {
     }
 }
 
+function lossEnergy(){
+    return 0.99
+}
+
 function calculateNextWave() {
     for (let i = 1; i < mesh.displacement.length - 1; i++) {
         for (let j = 1; j < mesh.displacement[0].length - 1; j++) {
-            mesh.displacementNew[i][j] = (2 * mesh.displacement[i][j]) - mesh.displacementOld[i][j] + ((courantNumber() ** 2) * (
+            mesh.displacementNew[i][j] = ((2 * mesh.displacement[i][j]) - mesh.displacementOld[i][j] + ((courantNumber() ** 2) * (
                 mesh.displacement[i+1][j] +
                 mesh.displacement[i-1][j] +
                 mesh.displacement[i][j+1] +
                 mesh.displacement[i][j-1] -
                 4 * mesh.displacement[i][j]
-            ));    
+            ))) * lossEnergy();    
         }
     }
 }
