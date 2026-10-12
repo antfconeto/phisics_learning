@@ -19,7 +19,7 @@ const mesh = {
     displacement: [],
     displacementOld: [],
     displacementNew: [],
-    c: 0.2,
+    c: 0.3,
     dt: 1,
     dx: 1,
     maxDisplacement: 150,
@@ -148,5 +148,19 @@ function loop() {
     requestAnimationFrame(loop);
 }
 
+
+function addWave(event) {
+    const rect = cnv.getBoundingClientRect();
+    const x = (event.clientX - rect.left) * (cnv.width / rect.width) - meshLeft();
+    const y = (event.clientY - rect.top) * (cnv.height / rect.height) - meshTop();
+
+    const j = Math.floor(x / mesh.cellWidth);
+    const i = Math.floor(y / mesh.cellHeight);
+
+    if (i < 1 || j < 1 || i >= mesh.displacement.length - 1 || j >= mesh.displacement[0].length - 1) return;
+
+    mesh.displacement[i][j] = 50;
+}
+cnv.addEventListener("mousedown",(event)=>addWave(event))
 defineStartDisplacement();
 loop();
