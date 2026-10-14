@@ -18,6 +18,19 @@ const mouse = {
     j: 0,
     lastI: -1,
     lastJ: -1,
+    overObstacle: null,
+};
+
+const obstacleDrag = {
+    target: null,
+    offsetI: 0,
+    offsetJ: 0,
+};
+
+const obstacleSettings = {
+    radius: 8,      // raio de um obstáculo novo, em células
+    minRadius: 3,
+    maxRadius: 40,
 };
 
 const pulse = {
@@ -44,6 +57,7 @@ const mesh = {
     displacementOld: [],
     displacementNew: [],
     obstacle: [],
+    obstacles: [],
     c: 0.3,
     dt: 1,
     dx: 1,
@@ -76,6 +90,17 @@ const palette = {
     rest: [10, 37, 82],
     crest: [125, 211, 252],
 };
+
+// cores das pedras (obstáculos): contrastam com o azul da água
+const rock = {
+    light: [231, 216, 181],
+    base: [168, 142, 101],
+    dark: [92, 74, 50],
+};
+
+function rgb(color) {
+    return `rgb(${color[0]}, ${color[1]}, ${color[2]})`;
+}
 
 function mix(a, b, t) {
     return [
@@ -135,7 +160,8 @@ function drawMesh() {
             const down = d[Math.min(rows - 1, i + 1)][j];
             const slope = (left - right) + (up - down);
 
-            const [r, g, b] = displacementColor(d[i][j], slope);
+            // células de obstáculo já na cor da pedra, para a borda suavizada não ficar azul
+            const [r, g, b] = mesh.obstacle[i][j] ? rock.base : displacementColor(d[i][j], slope);
             const k = (i * cols + j) * 4;
             data[k] = r;
             data[k + 1] = g;
@@ -188,9 +214,12 @@ function drawRings() {
     ctx.restore();
 }
 
-// Define the obstacle in the mesh (a circle in this case)
+// Obstacles: a list of circles ({ i, j, radius }, in cells) and a grid
+// (mesh.obstacle) rebuilt from that list, used by the wave update
 
-function addObstacle(x, y, radius) {
+function markObstacle(obstacle) {
+    const { i: x, j: y, radius } = obstacle;
+
     for (let i = x - radius; i <= x + radius; i++) {
         for (let j = y - radius; j <= y + radius; j++) {
             if (i < 1 || j < 1 || i >= mesh.height || j >= mesh.width) continue;
@@ -204,38 +233,74 @@ function addObstacle(x, y, radius) {
     }
 }
 
-function defineObstacles() {
+function rebuildObstacles() {
     mesh.obstacle = Array.from({ length: mesh.height + 1 }, () =>
         Array(mesh.width + 1).fill(false),
     );
+    mesh.obstacles.forEach(markObstacle);
+}
+
+function addObstacle(i, j, radius) {
+    const obstacle = { i, j, radius };
+    mesh.obstacles.push(obstacle);
+    markObstacle(obstacle);
+    return obstacle;
+}
+
+function removeObstacle(obstacle) {
+    mesh.obstacles.splice(mesh.obstacles.indexOf(obstacle), 1);
+    rebuildObstacles();
+}
+
+// the obstacle under cell (i, j); the last one added wins when they overlap
+function obstacleAt(i, j) {
+    for (let k = mesh.obstacles.length - 1; k >= 0; k--) {
+        const o = mesh.obstacles[k];
+        if ((i - o.i) ** 2 + (j - o.j) ** 2 <= o.radius ** 2) return o;
+    }
+    return null;
+}
+
+function defineObstacles() {
+    mesh.obstacles = [];
+    rebuildObstacles();
 
     addObstacle(60, 60, 8);
     addObstacle(140, 130, 12);
 }
 
-// Define the obstacle in the mesh (a circle in this case)
+function drawObstacles() {
+    for (const o of mesh.obstacles) {
+        const x = meshLeft() + (o.j + 0.5) * mesh.cellWidth;
+        const y = meshTop() + (o.i + 0.5) * mesh.cellHeight;
+        const r = (o.radius + 0.5) * mesh.cellWidth;
 
-function addObstacle(x, y, radius) {
-    for (let i = x - radius; i <= x + radius; i++) {
-        for (let j = y - radius; j <= y + radius; j++) {
-            if (i < 1 || j < 1 || i >= mesh.height || j >= mesh.width) continue;
-            if ((i - x) ** 2 + (j - y) ** 2 <= radius ** 2) {
-                mesh.obstacle[i][j] = true;
-                mesh.displacement[i][j] = 0;
-                if (mesh.displacementOld[i]) mesh.displacementOld[i][j] = 0;
-                if (mesh.displacementNew[i]) mesh.displacementNew[i][j] = 0;
-            }
+        // pedra iluminada de cima à esquerda, como a água
+        const stone = ctx.createRadialGradient(x - r * 0.35, y - r * 0.35, r * 0.1, x, y, r);
+        stone.addColorStop(0, rgb(rock.light));
+        stone.addColorStop(0.7, rgb(rock.base));
+        stone.addColorStop(1, rgb(rock.dark));
+
+        ctx.fillStyle = stone;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+
+        // espuma onde a água encosta na pedra
+        ctx.strokeStyle = "rgba(224, 242, 254, 0.35)";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        if (o === obstacleDrag.target || o === mouse.overObstacle) {
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.9)";
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([4, 3]);
+            ctx.beginPath();
+            ctx.arc(x, y, r + 3, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
         }
     }
-}
-
-function defineObstacles() {
-    mesh.obstacle = Array.from({ length: mesh.height + 1 }, () =>
-        Array(mesh.width + 1).fill(false),
-    );
-
-    addObstacle(60, 60, 8);
-    addObstacle(140, 130, 12);
 }
 
 // Functions for updating the mesh displacement and drawing the scene
@@ -359,7 +424,10 @@ function drawFormulas() {
         left, 96
     );
     ctx.textAlign = "right";
-    ctx.fillText(`n = ${mesh.step}   E = ${totalEnergy().toFixed(0)}`, right, 96);
+    ctx.fillText(
+        `n = ${mesh.step}   obstáculos = ${mesh.obstacles.length}   E = ${totalEnergy().toFixed(0)}`,
+        right, 96
+    );
 }
 
 function drawLegend() {
@@ -385,7 +453,12 @@ function drawLegend() {
     ctx.fillText("crista (u > 0)", left + width, top + 12);
 
     ctx.textAlign = "center";
-    if (mouse.inside) {
+    if (mouse.overObstacle) {
+        ctx.fillText(
+            `obstáculo r = ${mouse.overObstacle.radius} · arraste: mover · roda: tamanho · botão direito: remover`,
+            left + width / 2, top + 12
+        );
+    } else if (mouse.inside) {
         const u = mesh.displacement[mouse.i][mouse.j];
         const velocity = (u - mesh.displacementOld[mouse.i][mouse.j]) / mesh.dt;
         ctx.font = "11px monospace";
@@ -394,7 +467,7 @@ function drawLegend() {
             left + width / 2, top + 12
         );
     } else {
-        ctx.fillText("clique e arraste para criar ondas", left + width / 2, top + 12);
+        ctx.fillText("clique: onda · shift + clique: obstáculo", left + width / 2, top + 12);
     }
 }
 
@@ -402,6 +475,7 @@ function draw() {
     ctx.clearRect(0, 0, screen.width, screen.height);
     drawFormulas();
     drawMesh();
+    drawObstacles();
     drawRings();
     drawLegend();
 }
@@ -421,6 +495,8 @@ function addBump(centerI, centerJ, amplitude) {
 
     for (let i = Math.max(1, centerI - reach); i <= Math.min(rows - 2, centerI + reach); i++) {
         for (let j = Math.max(1, centerJ - reach); j <= Math.min(cols - 2, centerJ + reach); j++) {
+            if (mesh.obstacle[i][j]) continue;
+
             const distance2 = (i - centerI) ** 2 + (j - centerJ) ** 2;
             const bump = amplitude * Math.exp(-distance2 / (2 * pulse.radius ** 2));
             mesh.displacement[i][j] += bump;
@@ -447,21 +523,66 @@ function addWave(event, amplitude) {
     return { x: canvasX, y: canvasY };
 }
 
+function eventCell(event) {
+    const rect = cnv.getBoundingClientRect();
+    const j = Math.floor(((event.clientX - rect.left) * (cnv.width / rect.width) - meshLeft()) / mesh.cellWidth);
+    const i = Math.floor(((event.clientY - rect.top) * (cnv.height / rect.height) - meshTop()) / mesh.cellHeight);
+    const inside = i >= 0 && j >= 0
+        && i < mesh.displacement.length && j < mesh.displacement[0].length;
+    return { i, j, inside };
+}
+
+function updateCursor() {
+    if (obstacleDrag.target) cnv.style.cursor = "grabbing";
+    else if (mouse.overObstacle) cnv.style.cursor = "grab";
+    else cnv.style.cursor = mouse.inside ? "crosshair" : "default";
+}
+
 cnv.addEventListener("mousedown", (event) => {
+    if (event.button !== 0) return;
+
+    const { i, j, inside } = eventCell(event);
+    if (!inside) return;
+
+    // shift + clique: coloca um obstáculo novo
+    if (event.shiftKey) {
+        mouse.overObstacle = addObstacle(i, j, obstacleSettings.radius);
+        updateCursor();
+        return;
+    }
+
+    // clique em um obstáculo: começa a arrastá-lo
+    const obstacle = obstacleAt(i, j);
+    if (obstacle) {
+        obstacleDrag.target = obstacle;
+        obstacleDrag.offsetI = obstacle.i - i;
+        obstacleDrag.offsetJ = obstacle.j - j;
+        updateCursor();
+        return;
+    }
+
     mouse.pressed = true;
     const hit = addWave(event, pulse.amplitude);
     if (hit) rings.push({ x: hit.x, y: hit.y, radius: pulse.radius * mesh.cellWidth, alpha: 0.6 });
 });
 
 cnv.addEventListener("mousemove", (event) => {
-    const rect = cnv.getBoundingClientRect();
-    const j = Math.floor(((event.clientX - rect.left) * (cnv.width / rect.width) - meshLeft()) / mesh.cellWidth);
-    const i = Math.floor(((event.clientY - rect.top) * (cnv.height / rect.height) - meshTop()) / mesh.cellHeight);
+    const { i, j, inside } = eventCell(event);
 
     mouse.i = i;
     mouse.j = j;
-    mouse.inside = i >= 0 && j >= 0
-        && i < mesh.displacement.length && j < mesh.displacement[0].length;
+    mouse.inside = inside;
+
+    if (obstacleDrag.target) {
+        const target = obstacleDrag.target;
+        target.i = Math.max(1, Math.min(mesh.height - 1, i + obstacleDrag.offsetI));
+        target.j = Math.max(1, Math.min(mesh.width - 1, j + obstacleDrag.offsetJ));
+        rebuildObstacles();
+        return;
+    }
+
+    mouse.overObstacle = inside ? obstacleAt(i, j) : null;
+    updateCursor();
 
     if (!mouse.pressed) return;
 
@@ -470,9 +591,44 @@ cnv.addEventListener("mousemove", (event) => {
 
     addWave(event, pulse.dragAmplitude);
 });
-cnv.addEventListener("mouseleave", () => mouse.inside = false);
 
-window.addEventListener("mouseup", () => mouse.pressed = false);
+// botão direito em um obstáculo: remove
+cnv.addEventListener("contextmenu", (event) => {
+    const { i, j, inside } = eventCell(event);
+    const obstacle = inside ? obstacleAt(i, j) : null;
+    if (!obstacle) return;
+
+    event.preventDefault();
+    removeObstacle(obstacle);
+    mouse.overObstacle = null;
+    updateCursor();
+});
+
+// roda do mouse em um obstáculo: muda o tamanho
+cnv.addEventListener("wheel", (event) => {
+    if (!mouse.overObstacle) return;
+
+    event.preventDefault();
+    const o = mouse.overObstacle;
+    o.radius = Math.max(
+        obstacleSettings.minRadius,
+        Math.min(obstacleSettings.maxRadius, o.radius + (event.deltaY < 0 ? 1 : -1)),
+    );
+    obstacleSettings.radius = o.radius; // o próximo obstáculo nasce com esse tamanho
+    rebuildObstacles();
+}, { passive: false });
+
+cnv.addEventListener("mouseleave", () => {
+    mouse.inside = false;
+    if (!obstacleDrag.target) mouse.overObstacle = null;
+    updateCursor();
+});
+
+window.addEventListener("mouseup", () => {
+    mouse.pressed = false;
+    obstacleDrag.target = null;
+    updateCursor();
+});
 defineStartDisplacement();
 defineObstacles();
 loop();
