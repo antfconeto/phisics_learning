@@ -7,9 +7,9 @@ const screen = {
 };
 
 let mousePosition = {
-    x:0,
-    y:0
-}
+    x: 0,
+    y: 0,
+};
 
 const mesh = {
     width: 200,
@@ -19,6 +19,7 @@ const mesh = {
     displacement: [],
     displacementOld: [],
     displacementNew: [],
+    obstacle: [],
     c: 0.3,
     dt: 1,
     dx: 1,
@@ -49,9 +50,10 @@ function displacementColor(d) {
     // 'ratio' normaliza o deslocamento entre 0 e 1
     const ratio = Math.min(Math.max(d / mesh.maxDisplacement, 0), 1);
     const lightness = 10 + ratio * 80; // Vai de 10% (escuro) a 90% (claro)
-    
+
     return `hsl(240, 100%, ${lightness}%)`;
 }
+
 function meshLeft() {
     return Math.round(
         screen.width / 2 - (mesh.displacement[0].length * mesh.cellWidth) / 2,
@@ -65,7 +67,9 @@ function meshTop() {
 function drawMesh() {
     for (let i = 0; i < mesh.displacement.length; i++) {
         for (let j = 0; j < mesh.displacement[0].length; j++) {
-            ctx.fillStyle = displacementColor(mesh.displacement[i][j]);
+            ctx.fillStyle = mesh.obstacle[i][j]
+                ? "#6b5f55"
+                : displacementColor(mesh.displacement[i][j]);
             ctx.fillRect(
                 meshLeft() + j * mesh.cellWidth,
                 meshTop() + i * mesh.cellHeight,
@@ -85,6 +89,31 @@ function drawMesh() {
     );
 }
 
+// Define the obstacle in the mesh (a rectangle in this case)
+
+function addObstacle(x, y, radius) {
+    for (let i = x - radius; i <= x + radius; i++) {
+        for (let j = y - radius; j <= y + radius; j++) {
+            if (i < 1 || j < 1 || i >= mesh.height || j >= mesh.width) continue;
+            if ((i - x) ** 2 + (j - y) ** 2 <= radius ** 2) {
+                mesh.obstacle[i][j] = true;
+                mesh.displacement[i][j] = 0;
+                if (mesh.displacementOld[i]) mesh.displacementOld[i][j] = 0;
+                if (mesh.displacementNew[i]) mesh.displacementNew[i][j] = 0;
+            }
+        }
+    }
+}
+
+function defineObstacles() {
+    mesh.obstacle = Array.from({ length: mesh.height + 1 }, () =>
+        Array(mesh.width + 1).fill(false),
+    );
+
+    addObstacle(60, 60, 8);
+    addObstacle(140, 130, 12);
+}
+
 // Functions for updating the mesh displacement and drawing the scene
 
 function courantNumber() {
@@ -94,43 +123,57 @@ function courantNumber() {
 function calculateInitialWave() {
     for (let i = 1; i < mesh.displacement.length - 1; i++) {
         for (let j = 1; j < mesh.displacement[0].length - 1; j++) {
-            mesh.displacementNew[i][j] = mesh.displacement[i][j] + ((courantNumber() ** 2) / 2) * (
-                mesh.displacement[i+1][j] +
-                mesh.displacement[i-1][j] +
-                mesh.displacement[i][j+1] +
-                mesh.displacement[i][j-1] -
-                4 * mesh.displacement[i][j]
-            );
+            if (mesh.obstacle[i][j]) {
+                mesh.displacementNew[i][j] = 0;
+                continue;
+            }
+
+            mesh.displacementNew[i][j] =
+                mesh.displacement[i][j] +
+                (courantNumber() ** 2 / 2) *
+                    (mesh.displacement[i + 1][j] +
+                        mesh.displacement[i - 1][j] +
+                        mesh.displacement[i][j + 1] +
+                        mesh.displacement[i][j - 1] -
+                        4 * mesh.displacement[i][j]);
         }
     }
 }
 
-function lossEnergy(){
-    return 0.99
+function lossEnergy() {
+    return 0.99;
 }
 
 function calculateNextWave() {
     for (let i = 1; i < mesh.displacement.length - 1; i++) {
         for (let j = 1; j < mesh.displacement[0].length - 1; j++) {
-            mesh.displacementNew[i][j] = ((2 * mesh.displacement[i][j]) - mesh.displacementOld[i][j] + ((courantNumber() ** 2) * (
-                mesh.displacement[i+1][j] +
-                mesh.displacement[i-1][j] +
-                mesh.displacement[i][j+1] +
-                mesh.displacement[i][j-1] -
-                4 * mesh.displacement[i][j]
-            ))) * lossEnergy();    
+            if (mesh.obstacle[i][j]) {
+                mesh.displacementNew[i][j] = 0;
+                continue;
+            }
+
+            mesh.displacementNew[i][j] =
+                (2 * mesh.displacement[i][j] -
+                    mesh.displacementOld[i][j] +
+                    courantNumber() ** 2 *
+                        (mesh.displacement[i + 1][j] +
+                            mesh.displacement[i - 1][j] +
+                            mesh.displacement[i][j + 1] +
+                            mesh.displacement[i][j - 1] -
+                            4 * mesh.displacement[i][j])) *
+                lossEnergy();
         }
     }
 }
 
 function update() {
     if (mesh.step === 0) {
-        mesh.displacementOld = mesh.displacement.map(row => [...row]);
-        mesh.displacementNew = mesh.displacement.map(row => [...row]);
+        mesh.displacementOld = mesh.displacement.map((row) => [...row]);
+        mesh.displacementNew = mesh.displacement.map((row) => [...row]);
         calculateInitialWave();
     } else {
-        mesh.displacementOld = mesh.displacement.map(row => [...row]);
-        mesh.displacement = mesh.displacementNew.map(row => [...row]);
+        mesh.displacementOld = mesh.displacement.map((row) => [...row]);
+        mesh.displacement = mesh.displacementNew.map((row) => [...row]);
         calculateNextWave();
     }
 
@@ -148,19 +191,28 @@ function loop() {
     requestAnimationFrame(loop);
 }
 
-
 function addWave(event) {
     const rect = cnv.getBoundingClientRect();
-    const x = (event.clientX - rect.left) * (cnv.width / rect.width) - meshLeft();
-    const y = (event.clientY - rect.top) * (cnv.height / rect.height) - meshTop();
+    const x =
+        (event.clientX - rect.left) * (cnv.width / rect.width) - meshLeft();
+    const y =
+        (event.clientY - rect.top) * (cnv.height / rect.height) - meshTop();
 
     const j = Math.floor(x / mesh.cellWidth);
     const i = Math.floor(y / mesh.cellHeight);
 
-    if (i < 1 || j < 1 || i >= mesh.displacement.length - 1 || j >= mesh.displacement[0].length - 1) return;
+    if (
+        i < 1 ||
+        j < 1 ||
+        i >= mesh.displacement.length - 1 ||
+        j >= mesh.displacement[0].length - 1
+    )
+        return;
 
     mesh.displacement[i][j] = 50;
 }
-cnv.addEventListener("mousedown",(event)=>addWave(event))
+cnv.addEventListener("mousedown", (event) => addWave(event));
+
 defineStartDisplacement();
+defineObstacles();
 loop();
