@@ -48,7 +48,7 @@ function defineStartDisplacement() {
 function displacementColor(d) {
     // Mapeia o deslocamento para uma faixa de luminosidade (ex: de 10% a 90%)
     // 'ratio' normaliza o deslocamento entre 0 e 1
-    const ratio = Math.min(Math.max(d / mesh.maxDisplacement, 0), 1);
+    const ratio = Math.min(Math.max((d / 20 + 1) / 2, 0), 1);
     const lightness = 10 + ratio * 80; // Vai de 10% (escuro) a 90% (claro)
 
     return `hsl(240, 100%, ${lightness}%)`;
@@ -89,7 +89,7 @@ function drawMesh() {
     );
 }
 
-// Define the obstacle in the mesh (a rectangle in this case)
+// Define the obstacle in the mesh (a circle in this case)
 
 function addObstacle(x, y, radius) {
     for (let i = x - radius; i <= x + radius; i++) {
